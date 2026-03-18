@@ -1,0 +1,55 @@
+# Игнорируем файлы окружения с секретами
+.env
+
+# Логи
+logs/
+*.log
+botorda.log
+
+# Данные пользователей (приватные!)
+subscriptions.json
+payments.json
+daily_traffic.json
+
+# Тестовые файлы (содержат секреты!)
+test.py
+test2.py
+test_api.py
+test_limits.py
+
+# Скрипт запуска (содержит пути)
+run_bot.bat
+upload_to_github.bat
+
+# Скрипты деплоя (содержат учётные данные серверов)
+deploy*.py
+fix_*.py
+*.bak
+
+# Python кэш
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Виртуальное окружение
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
