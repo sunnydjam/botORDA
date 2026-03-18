@@ -88,6 +88,19 @@ if not ADMIN_USERNAME or not ADMIN_PASSWORD:
 if not ORDAFLOW_API_URL:
     raise ValueError("ORDAFLOW_API_URL должен быть установлен!")
 
+# ============== ИНСТРУКЦИЯ ПОДКЛЮЧЕНИЯ ==============
+CONNECTION_GUIDE = (
+    "📱 **Как подключиться (v2RayTun)**\n\n"
+    "**1.** Скачайте приложение v2RayTun:\n"
+    "• [App Store](https://apps.apple.com/app/v2raytun/id6476628951) (iPhone/iPad)\n"
+    "• [Google Play](https://play.google.com/store/apps/details?id=com.v2raytun.android) (Android)\n\n"
+    "**2.** Скопируйте ссылку на подписку из бота\n\n"
+    "**3.** Откройте v2RayTun → нажмите **\"+\"** → **\"Импорт из буфера обмена\"**\n\n"
+    "**4.** Конфигурация появится в списке → нажмите **▶ для подключения**\n\n"
+    "**5.** Разрешите создание VPN-профиля → Готово! ✅\n\n"
+    "💡 _Также подойдут: V2rayN (Windows), Nekoray (ПК), Shadowrocket (iOS)_"
+)
+
 class OrdaflowAPIManager:
     """Менеджер для работы с API Ordaflow"""
     
@@ -834,6 +847,7 @@ async def show_subscription_plans(update: Update, context: ContextTypes.DEFAULT_
     # Если есть активная подписка, добавляем кнопку статуса
     if current_sub["active"]:
         keyboard.append([InlineKeyboardButton("📊 Мой статус", callback_data="my_status")])
+        keyboard.append([InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")])
     
     keyboard.append([InlineKeyboardButton("❓ Помощь", callback_data="help_subscription")])
     
@@ -1065,13 +1079,12 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
             f"👤 **Ваш аккаунт:** `{vpn_username}`\n\n"
             f"🔗 **Ссылка на подписку:**\n"
             f"`{subscription_url}`\n\n"
-            f"📱 **Как подключиться:**\n"
-            f"1️⃣ Скопируйте ссылку\n"
-            f"2️⃣ Откройте proxy-клиент\n"
-            f"3️⃣ Добавьте подписку\n"
-            f"4️⃣ Подключайтесь!\n\n"
-            f"💾 Сохраните это сообщение!",
-            parse_mode="Markdown"
+            f"� Сохраните это сообщение!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+            ])
         )
         
     else:
@@ -1097,13 +1110,12 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
                 f"👤 **Ваш аккаунт:** `{vpn_username}`\n\n"
                 f"🔗 **Ваша ссылка на подписку:**\n"
                 f"`{subscription_url}`\n\n"
-                f"📱 **Как подключиться:**\n"
-                f"1️⃣ Скопируйте ссылку выше\n"
-                f"2️⃣ Откройте proxy-клиент (V2rayN, Nekoray, Shadowrocket)\n"
-                f"3️⃣ Добавьте подписку по ссылке\n"
-                f"4️⃣ Подключитесь!\n\n"
-                f"💾 Сохраните это сообщение!",
-                parse_mode="Markdown"
+                f"� Сохраните это сообщение!",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+                ])
             )
         else:
             # Ошибка создания, но подписку все равно активируем
@@ -1231,15 +1243,11 @@ async def activate_trial_handler(update: Update, context: ContextTypes.DEFAULT_T
         f"👤 **Ваш аккаунт:** `{vpn_username}`\n\n"
         f"🔗 **Ссылка на подписку:**\n"
         f"`{subscription_url}`\n\n"
-        f"📱 **Как подключиться:**\n"
-        f"1️⃣ Скопируйте ссылку\n"
-        f"2️⃣ Откройте proxy-клиент (V2rayN, Nekoray, Shadowrocket)\n"
-        f"3️⃣ Добавьте подписку по ссылке\n"
-        f"4️⃣ Подключитесь!\n\n"
-        f"💡 _После окончания пробного периода вы сможете оформить подписку за 50⭐/мес_",
+        f"� _После окончания пробного периода вы сможете оформить подписку за 50⭐/мес_",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+            [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
             [InlineKeyboardButton("📊 Мой статус", callback_data="my_status")],
         ])
     )
@@ -1379,7 +1387,8 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                    [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                    [InlineKeyboardButton("� Как подключиться", callback_data="connection_guide")],
+                    [InlineKeyboardButton("�💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
                 ])
             )
             return
@@ -1432,7 +1441,11 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Трафик: {used_gb:.2f} GB (безлимит)\n"
             f"• Аккаунт: `{vpn_username}`\n\n"
             f"🔗 **Ссылка:**\n`{subscription_url}`",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+            ])
         )
     else:
         await update.message.reply_text(
@@ -2198,6 +2211,17 @@ async def refresh_subscription(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode="Markdown"
     )
 
+async def connection_guide_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать инструкцию по подключению"""
+    query = update.callback_query
+    await query.answer()
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=CONNECTION_GUIDE,
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+
 async def my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Статус моего аккаунта"""
     query = update.callback_query
@@ -2250,6 +2274,7 @@ async def my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("🔄 Обновить статус", callback_data="my_status")],
             [InlineKeyboardButton("🔗 Моя ссылка", callback_data="refresh_subscription")],
+            [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
             [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
         ]
     else:
@@ -2490,6 +2515,7 @@ def main():
         application.add_handler(CallbackQueryHandler(back_to_plans_handler, pattern="^back_to_plans$"))
         
         # ========== ОБРАБОТЧИКИ КНОПОК VPN ==========
+        application.add_handler(CallbackQueryHandler(connection_guide_handler, pattern="^connection_guide$"))
         application.add_handler(CallbackQueryHandler(refresh_subscription, pattern="^refresh_subscription$"))
         application.add_handler(CallbackQueryHandler(my_status, pattern="^my_status$"))
         application.add_handler(CallbackQueryHandler(retry_create, pattern="^retry_create$"))
