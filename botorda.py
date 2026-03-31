@@ -44,6 +44,9 @@ TRIAL_CONFIG = {
     "traffic_limit_bytes": 3 * 1024 * 1024 * 1024,  # 3 GB
 }
 
+# Дневной лимит трафика (0 = безлимит)
+DAILY_TRAFFIC_LIMIT = 0
+
 # Настройка логирования с записью в файл
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -97,7 +100,7 @@ CONNECTION_GUIDE = (
     "**2.** Скопируйте ссылку на подписку из бота\n\n"
     "**3.** Откройте v2RayTun → нажмите **\"+\"** → **\"Импорт из буфера обмена\"**\n\n"
     "**4.** Конфигурация появится в списке → нажмите **▶ для подключения**\n\n"
-    "**5.** Разрешите создание VPN-профиля → Готово! ✅\n\n"
+    "**5.** Разрешите создание профиля → Готово! ✅\n\n"
     "💡 _Также подойдут: V2rayN (Windows), Nekoray (ПК), Shadowrocket (iOS)_"
 )
 
@@ -1349,6 +1352,7 @@ async def check_trials_job(app: Application):
 
         except Exception as e:
             logger.error(f"Ошибка в check_trials_job: {e}")
+            await asyncio.sleep(60)
 
 
 async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1592,18 +1596,22 @@ async def unblock_daily_limited_users(app: Application):
 async def daily_reset_job(app: Application):
     """Фоновая задача для ежедневного сброса лимитов в полночь"""
     while True:
-        now = datetime.now()
-        # Вычисляем время до полуночи
-        tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        seconds_until_midnight = (tomorrow - now).total_seconds()
-        
-        logger.info(f"Следующий сброс дневных лимитов через {seconds_until_midnight/3600:.1f} часов")
-        
-        await asyncio.sleep(seconds_until_midnight)
-        
-        # Выполняем сброс
-        logger.info("🔄 Выполняю ежедневный сброс лимитов...")
-        await unblock_daily_limited_users(app)
+        try:
+            now = datetime.now()
+            # Вычисляем время до полуночи
+            tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            seconds_until_midnight = (tomorrow - now).total_seconds()
+            
+            logger.info(f"Следующий сброс дневных лимитов через {seconds_until_midnight/3600:.1f} часов")
+            
+            await asyncio.sleep(seconds_until_midnight)
+            
+            # Выполняем сброс
+            logger.info("🔄 Выполняю ежедневный сброс лимитов...")
+            await unblock_daily_limited_users(app)
+        except Exception as e:
+            logger.error(f"Ошибка в daily_reset_job: {e}")
+            await asyncio.sleep(60)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start - проверка подписки и показ меню тарифов"""
@@ -1650,10 +1658,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
                 f"🔗 **Ваша ссылка:**\n"
                 f"`{subscription_url}`\n\n"
-                f"📱 Скопируйте и вставьте в proxy-клиент",
+                f"📱 _Нажмите кнопку ниже для инструкции по подключению_",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
                     [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_subscription")],
                     [InlineKeyboardButton("📊 Подробный статус", callback_data="my_status")],
                     [InlineKeyboardButton("💳 Продлить подписку", callback_data="back_to_plans")]
@@ -1698,10 +1707,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"• Осталось: {days_left} дней\n\n"
                     f"🔗 **Ваша ссылка:**\n"
                     f"`{subscription_url}`\n\n"
-                    f"📱 Скопируйте и вставьте в proxy-клиент",
+                    f"📱 _Нажмите кнопку ниже для инструкции по подключению_",
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                        [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
                         [InlineKeyboardButton("📊 Статус", callback_data="my_status")]
                     ])
                 )
@@ -1753,7 +1763,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                    [InlineKeyboardButton("📊 Статус", callback_data="my_status")],
+                    [InlineKeyboardButton("� Как подключиться", callback_data="connection_guide")],
+                    [InlineKeyboardButton("�📊 Статус", callback_data="my_status")],
                     [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
                 ])
             )
@@ -2211,8 +2222,16 @@ async def refresh_subscription(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode="Markdown"
     )
 
+async def guide_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /guide - инструкция по подключению"""
+    await update.message.reply_text(
+        CONNECTION_GUIDE,
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+
 async def connection_guide_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать инструкцию по подключению"""
+    """Кнопка - инструкция по подключению"""
     query = update.callback_query
     await query.answer()
     await context.bot.send_message(
@@ -2429,16 +2448,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/start - Главное меню и статус\n"
         "/subscribe - Тарифы и оплата\n"
         "/myvpn - Статус вашего аккаунта\n"
+        "/guide - Инструкция по подключению\n"
         "/paysupport - Помощь с оплатой\n"
-        "/help - Эта справка\n"
-        "/admin - Админ панель\n\n"
-        "**Как подключиться:**\n"
-        "1. Выберите тарифный план\n"
-        "2. Оплатите звездами Telegram ⭐\n"
-        "3. Proxy создастся автоматически!\n"
-        "4. Скопируйте ссылку в proxy-клиент\n\n"
+        "/help - Эта справка\n\n"
         "**Тариф:**\n"
-        "📅 1 месяц (50⭐) — безлимитный трафик\n\n"
+        "📅 1 месяц (50⭐) — безлимитный трафик\n"
+        "🎁 Пробный период — 3 дня / 3 GB бесплатно\n\n"
         "**Проблемы?**\n"
         "• /paysupport - помощь с оплатой\n"
         "• Проверьте баланс звезд в Telegram"
@@ -2507,6 +2522,7 @@ def main():
         application.add_handler(CommandHandler("subscribe", subscribe_command))
         application.add_handler(CommandHandler("myvpn", myvpn_command))
         application.add_handler(CommandHandler("paysupport", paysupport_command))
+        application.add_handler(CommandHandler("guide", guide_command))
         
         # ========== ОБРАБОТЧИКИ КНОПОК ПОДПИСКИ ==========
         application.add_handler(CallbackQueryHandler(buy_plan_handler, pattern="^buy_"))
@@ -2540,6 +2556,7 @@ def main():
                 BotCommand("start", "Главное меню"),
                 BotCommand("subscribe", "Тарифы и оплата"),
                 BotCommand("myvpn", "Мой аккаунт"),
+                BotCommand("guide", "Как подключиться"),
                 BotCommand("help", "Помощь"),
                 BotCommand("paysupport", "Поддержка"),
             ])
