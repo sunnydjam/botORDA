@@ -1432,14 +1432,24 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"⚠️ **Ваша подписка истекла**\n\n"
                 f"Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
                 f"Истекла: {sub.get('expires').strftime('%d.%m.%Y') if sub.get('expires') else 'Неизвестно'}\n\n"
-                f"Используйте /subscribe для продления",
-                parse_mode="Markdown"
+                f"Оформите подписку для продолжения:\n\n"
+                f"📅 **1 месяц — 50⭐**\n"
+                f"♾️ Безлимитный трафик",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Продлить подписку (50⭐)", callback_data="buy_month1")],
+                ])
             )
         else:
             await update.message.reply_text(
                 f"❌ **У вас нет активной подписки**\n\n"
-                f"Используйте /subscribe для оформления подписки",
-                parse_mode="Markdown"
+                f"Оформите подписку для доступа к proxy:\n\n"
+                f"📅 **1 месяц — 50⭐**\n"
+                f"♾️ Безлимитный трафик",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                ])
             )
         return
     
