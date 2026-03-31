@@ -1479,14 +1479,14 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(
                 f"📊 **Ваш статус**\n\n"
-                f"**Подписка:**\n"
-                f"• Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
-                f"• Осталось: {days_left} дней\n\n"
-                f"**Аккаунт:**\n"
-                f"• Статус: 🔴 Отключён\n"
-                f"• Аккаунт: `{vpn_username}`\n\n"
-                f"⚠️ Proxy недоступен. Обратитесь в /paysupport",
-                parse_mode="Markdown"
+                f"🔴 **Proxy недоступен**\n\n"
+                f"Оформите подписку для продолжения:\n\n"
+                f"📅 **1 месяц — 50⭐**\n"
+                f"♾️ Безлимитный трафик",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                ])
             )
     else:
         await update.message.reply_text(
@@ -1712,17 +1712,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 # Аккаунт disabled — подписка есть, но proxy не работает
                 await msg.edit_text(
-                    f"⚠️ **Proxy временно недоступен**\n\n"
+                    f"🚫 **Доступ к proxy истёк**\n\n"
                     f"👤 **Аккаунт:** `{vpn_username}`\n"
                     f"🔴 **Статус:** Отключён\n\n"
-                    f"**Подписка:**\n"
-                    f"• Тариф: {plan_name}\n"
-                    f"• Осталось: {days_left} дней\n\n"
-                    f"Обратитесь в поддержку: /paysupport",
+                    f"Оформите подписку для продолжения:\n\n"
+                    f"📅 **1 месяц — 50⭐**\n"
+                    f"♾️ Безлимитный трафик\n\n"
+                    f"_Сёрфи свободно и безопасно. OrdaFlow._ 🐎",
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📊 Проверить статус", callback_data="my_status")],
-                        [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
+                        [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                        [InlineKeyboardButton("📊 Проверить статус", callback_data="my_status")]
                     ])
                 )
         else:
