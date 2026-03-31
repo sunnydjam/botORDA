@@ -785,6 +785,54 @@ class SubscriptionManager:
             self._save_data()
             logger.info(f"Trial деактивирован: user={user_id}, reason={reason}")
 
+    def get_users_to_notify(self) -> list:
+        """Возвращает пользователей без доступа, которым пора отправить напоминание (макс 1 раз в сутки)"""
+        to_notify = []
+        now = datetime.now()
+        for user_key, user_data in self.data.get("users", {}).items():
+            # Проверяем кулдаун 24ч
+            last_notified_str = user_data.get("last_expiry_notification")
+            if last_notified_str:
+                try:
+                    last_notified = datetime.fromisoformat(last_notified_str)
+                    if (now - last_notified).total_seconds() < 86400:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
+            # Случай 1: истёкшая платная подписка
+            expires_str = user_data.get("expires")
+            if user_data.get("plan") and expires_str:
+                try:
+                    expires = datetime.fromisoformat(expires_str)
+                    if now > expires:
+                        to_notify.append({
+                            "user_id": int(user_key),
+                            "vpn_username": user_data.get("vpn_username"),
+                            "type": "subscription",
+                            "plan_name": user_data.get("plan_name", "Неизвестный")
+                        })
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
+            # Случай 2: использованный trial без подписки
+            if not user_data.get("plan") and user_data.get("trial_used", False) and not user_data.get("trial_active", False):
+                to_notify.append({
+                    "user_id": int(user_key),
+                    "vpn_username": user_data.get("vpn_username"),
+                    "type": "trial"
+                })
+
+        return to_notify
+
+    def mark_expiry_notified(self, user_id: int):
+        """Сохраняет время отправки уведомления"""
+        user_key = str(user_id)
+        if user_key in self.data["users"]:
+            self.data["users"][user_key]["last_expiry_notification"] = datetime.now().isoformat()
+            self._save_data()
+
     def get_active_trials(self) -> list:
         """Возвращает список пользователей с активным trial"""
         trials = []
@@ -1352,6 +1400,71 @@ async def check_trials_job(app: Application):
 
         except Exception as e:
             logger.error(f"Ошибка в check_trials_job: {e}")
+            await asyncio.sleep(60)
+
+
+async def check_subscriptions_job(app: Application):
+    """Фоновая задача: ежедневное напоминание пользователям без доступа (макс 1 раз в сутки)"""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Проверяем каждый час
+
+            users_to_notify = subscription_manager.get_users_to_notify()
+
+            for user in users_to_notify:
+                user_id = user["user_id"]
+                vpn_username = user["vpn_username"]
+                notify_type = user["type"]
+
+                # Отключаем аккаунт на сервере (если ещё не отключён)
+                if vpn_username:
+                    try:
+                        api_manager.set_user_status(vpn_username, "disabled")
+                    except Exception as e:
+                        logger.error(f"Ошибка отключения аккаунта {vpn_username}: {e}")
+
+                # Формируем текст в зависимости от типа
+                if notify_type == "subscription":
+                    text = (
+                        f"⚠️ **Ваша подписка истекла**\n\n"
+                        f"Тариф: {user.get('plan_name', 'Неизвестный')}\n"
+                        f"Доступ к proxy приостановлен.\n\n"
+                        f"Продлите подписку и продолжайте пользоваться:\n\n"
+                        f"📅 **1 месяц — 50⭐**\n"
+                        f"♾️ Безлимитный трафик\n\n"
+                        f"_Сёрфи свободно и безопасно. OrdaFlow._ 🐎"
+                    )
+                    button_text = "💳 Продлить подписку (50⭐)"
+                else:
+                    text = (
+                        f"👋 **Пробный период завершён**\n\n"
+                        f"Вам понравился наш сервис? 🐎\n"
+                        f"Оформите подписку и пользуйтесь прокси без ограничений:\n\n"
+                        f"📅 **1 месяц — 50⭐**\n"
+                        f"♾️ Безлимитный трафик\n\n"
+                        f"_Сёрфи свободно и безопасно. OrdaFlow._ 🐎"
+                    )
+                    button_text = "💳 Оформить подписку (50⭐)"
+
+                # Отправляем
+                try:
+                    await app.bot.send_message(
+                        chat_id=user_id,
+                        text=text,
+                        parse_mode="Markdown",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton(button_text, callback_data="buy_month1")],
+                        ])
+                    )
+                    logger.info(f"Напоминание отправлено: user={user_id}, type={notify_type}")
+                except Exception as e:
+                    logger.error(f"Ошибка отправки напоминания user={user_id}: {e}")
+
+                # Отмечаем время отправки
+                subscription_manager.mark_expiry_notified(user_id)
+
+        except Exception as e:
+            logger.error(f"Ошибка в check_subscriptions_job: {e}")
             await asyncio.sleep(60)
 
 
@@ -2716,6 +2829,7 @@ def main():
             ])
             asyncio.create_task(daily_reset_job(app))
             asyncio.create_task(check_trials_job(app))
+            asyncio.create_task(check_subscriptions_job(app))
             logger.info("Команды бота установлены, фоновые задачи запущены")
         
         application.post_init = post_init
