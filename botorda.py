@@ -1444,59 +1444,36 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = user_data.get("status", "unknown")
         used_traffic = user_data.get("used_traffic", 0)
         
+        # Форматируем статус
+        status_emoji = "🟢" if status == "active" else "🔴"
+        
+        # Ссылка на подписку
+        subscription_result = api_manager.get_subscription_url(vpn_username)
+        subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
+        
         expires = sub.get("expires")
         days_left = (expires - datetime.now()).days if expires else 0
+        
+        # Общий трафик
         used_gb = used_traffic / (1024**3)
         
-        if status == "active":
-            subscription_result = api_manager.get_subscription_url(vpn_username)
-            subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
-            
-            await update.message.reply_text(
-                f"📊 **Ваш статус**\n\n"
-                f"**Подписка:**\n"
-                f"• Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
-                f"• Осталось: {days_left} дней\n"
-                f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
-                f"**Аккаунт:**\n"
-                f"• Статус: 🟢 Активный\n"
-                f"• Трафик: {used_gb:.2f} GB (безлимит)\n"
-                f"• Аккаунт: `{vpn_username}`\n\n"
-                f"🔗 **Ссылка:**\n`{subscription_url}`",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-                ])
-            )
-        else:
-            # Аккаунт disabled — пробуем реактивировать (подписка ведь активна)
-            try:
-                api_manager.set_user_status(vpn_username, "active")
-                subscription_result = api_manager.get_subscription_url(vpn_username)
-                subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
-                
-                await update.message.reply_text(
-                    f"🔄 **Аккаунт был отключён — перезапущен!**\n\n"
-                    f"✅ Статус: Активный\n"
-                    f"• Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
-                    f"• Осталось: {days_left} дней\n\n"
-                    f"🔗 **Ссылка:**\n`{subscription_url}`",
-                    parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                        [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-                    ])
-                )
-            except Exception:
-                await update.message.reply_text(
-                    f"🚫 **Proxy недоступен**\n\n"
-                    f"Аккаунт: `{vpn_username}`\n"
-                    f"Статус: 🔴 Отключён\n\n"
-                    f"Подписка активна, но аккаунт заблокирован.\n"
-                    f"Обратитесь в /paysupport",
-                    parse_mode="Markdown"
-                )
+        await update.message.reply_text(
+            f"📊 **Ваш статус**\n\n"
+            f"**Подписка:**\n"
+            f"• Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
+            f"• Осталось: {days_left} дней\n"
+            f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
+            f"**Аккаунт:**\n"
+            f"• Статус: {status_emoji} {status}\n"
+            f"• Трафик: {used_gb:.2f} GB (безлимит)\n"
+            f"• Аккаунт: `{vpn_username}`\n\n"
+            f"🔗 **Ссылка:**\n`{subscription_url}`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+            ])
+        )
     else:
         await update.message.reply_text(
             f"⚠️ **Аккаунт не найден**\n\n"
@@ -1691,70 +1668,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             days_left = (expires - datetime.now()).days if expires else 0
             plan_name = sub.get("plan_name", "Неизвестный")
             
-            if status == "active":
-                await msg.edit_text(
-                    f"✅ **Ваш proxy активен!**\n\n"
-                    f"👤 **Аккаунт:** `{vpn_username}`\n"
-                    f"🟢 **Статус:** Активный\n"
-                    f"♾️ **Трафик:** Безлимит\n\n"
-                    f"**Подписка:**\n"
-                    f"• Тариф: {plan_name}\n"
-                    f"• Осталось: {days_left} дней\n"
-                    f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
-                    f"🔗 **Ваша ссылка:**\n"
-                    f"`{subscription_url}`\n\n"
-                    f"📱 _Нажмите кнопку ниже для инструкции по подключению_",
-                    parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                        [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-                        [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_subscription")],
-                        [InlineKeyboardButton("📊 Подробный статус", callback_data="my_status")],
-                        [InlineKeyboardButton("💳 Продлить подписку", callback_data="back_to_plans")]
-                    ])
-                )
-                
-                await update.message.reply_text(
-                    f"📋 **Ссылка для копирования:**\n\n{subscription_url}",
-                    parse_mode="Markdown"
-                )
-            else:
-                # Аккаунт disabled — пробуем реактивировать
-                try:
-                    api_manager.set_user_status(vpn_username, "active")
-                    reactivated = True
-                except Exception:
-                    reactivated = False
-                
-                if reactivated:
-                    await msg.edit_text(
-                        f"🔄 **Аккаунт был отключён — перезапускаю...**\n\n"
-                        f"✅ Аккаунт активирован!\n\n"
-                        f"👤 **Аккаунт:** `{vpn_username}`\n"
-                        f"♾️ **Трафик:** Безлимит\n\n"
-                        f"🔗 **Ваша ссылка:**\n"
-                        f"`{subscription_url}`\n\n"
-                        f"📱 _Нажмите кнопку ниже для инструкции по подключению_",
-                        parse_mode="Markdown",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                            [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-                            [InlineKeyboardButton("📊 Статус", callback_data="my_status")],
-                        ])
-                    )
-                else:
-                    await msg.edit_text(
-                        f"🚫 **Proxy недоступен**\n\n"
-                        f"👤 **Аккаунт:** `{vpn_username}`\n"
-                        f"🔴 **Статус:** Отключён\n\n"
-                        f"Подписка активна, но аккаунт заблокирован.\n"
-                        f"Обратитесь в поддержку: /paysupport",
-                        parse_mode="Markdown",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("🔄 Попробовать снова", callback_data="my_status")],
-                            [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
-                        ])
-                    )
+            status_emoji = "🟢" if status == "active" else "🔴"
+            
+            await msg.edit_text(
+                f"✅ **Ваш proxy активен!**\n\n"
+                f"👤 **Аккаунт:** `{vpn_username}`\n"
+                f"📊 **Статус:** {status_emoji} {status}\n"
+                f"♾️ **Трафик:** Безлимит\n\n"
+                f"**Подписка:**\n"
+                f"• Тариф: {plan_name}\n"
+                f"• Осталось: {days_left} дней\n"
+                f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
+                f"🔗 **Ваша ссылка:**\n"
+                f"`{subscription_url}`\n\n"
+                f"📱 _Нажмите кнопку ниже для инструкции по подключению_",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+                    [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_subscription")],
+                    [InlineKeyboardButton("📊 Подробный статус", callback_data="my_status")],
+                    [InlineKeyboardButton("💳 Продлить подписку", callback_data="back_to_plans")]
+                ])
+            )
+            
+            # Отдельное сообщение для копирования
+            await update.message.reply_text(
+                f"📋 **Ссылка для копирования:**\n\n{subscription_url}",
+                parse_mode="Markdown"
+            )
         else:
             # Подписка есть, но VPN аккаунт не найден - создаем
             await msg.edit_text(
@@ -2383,51 +2325,23 @@ async def my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             days_left = (expires - datetime.now()).days if expires else 0
             expire_text = f"{expires.strftime('%d.%m.%Y')} ({days_left} дн.)" if expires else "♾️ Бессрочно"
             
-            if api_status == "active":
-                response_text = (
-                    f"📊 **Статус вашего аккаунта**\n\n"
-                    f"👤 **Аккаунт:** `{vpn_username}`\n"
-                    f"✅ **Статус:** Активный\n\n"
-                    f"📦 **Тариф:** {sub.get('plan_name', 'Подписка')}\n"
-                    f"♾️ **Трафик:** {used_gb:.2f} GB (безлимит)\n"
-                    f"⏳ **Срок действия:** {expire_text}\n"
-                )
-                keyboard = [
-                    [InlineKeyboardButton("🔄 Обновить статус", callback_data="my_status")],
-                    [InlineKeyboardButton("🔗 Моя ссылка", callback_data="refresh_subscription")],
-                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-                    [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
-                ]
-            else:
-                # Подписка активна, но аккаунт disabled — пробуем реактивировать
-                try:
-                    api_manager.set_user_status(vpn_username, "active")
-                    response_text = (
-                        f"📊 **Статус вашего аккаунта**\n\n"
-                        f"👤 **Аккаунт:** `{vpn_username}`\n"
-                        f"🔄 **Статус:** Перезапущен → Активный\n\n"
-                        f"📦 **Тариф:** {sub.get('plan_name', 'Подписка')}\n"
-                        f"♾️ **Трафик:** {used_gb:.2f} GB (безлимит)\n"
-                        f"⏳ **Срок действия:** {expire_text}\n"
-                    )
-                    keyboard = [
-                        [InlineKeyboardButton("🔄 Обновить статус", callback_data="my_status")],
-                        [InlineKeyboardButton("🔗 Моя ссылка", callback_data="refresh_subscription")],
-                        [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-                        [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
-                    ]
-                except Exception:
-                    response_text = (
-                        f"📊 **Статус вашего аккаунта**\n\n"
-                        f"👤 **Аккаунт:** `{vpn_username}`\n"
-                        f"🚫 **Статус:** Proxy недоступен\n\n"
-                        f"Подписка активна, но аккаунт заблокирован.\n"
-                        f"Обратитесь в /paysupport"
-                    )
-                    keyboard = [
-                        [InlineKeyboardButton("🔄 Попробовать снова", callback_data="my_status")],
-                        [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
-                    ]
+            status_emoji = "✅" if api_status == "active" else "🔴"
+            status_text = "Активный" if api_status == "active" else api_status
+            
+            response_text = (
+                f"📊 **Статус вашего аккаунта**\n\n"
+                f"👤 **Аккаунт:** `{vpn_username}`\n"
+                f"{status_emoji} **Статус:** {status_text}\n\n"
+                f"📦 **Тариф:** {sub.get('plan_name', 'Подписка')}\n"
+                f"♾️ **Трафик:** {used_gb:.2f} GB (безлимит)\n"
+                f"⏳ **Срок действия:** {expire_text}\n"
+            )
+            keyboard = [
+                [InlineKeyboardButton("🔄 Обновить статус", callback_data="my_status")],
+                [InlineKeyboardButton("🔗 Моя ссылка", callback_data="refresh_subscription")],
+                [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+                [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
+            ]
             
         elif has_active_trial:
             # Активный trial — проверяем лимит трафика
