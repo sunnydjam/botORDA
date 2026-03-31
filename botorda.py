@@ -1372,11 +1372,34 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expire_text = expires.strftime('%d.%m.%Y %H:%M') if expires else "Неизвестно"
 
             traffic_text = "..."
+            traffic_exceeded = False
             user_info = api_manager.get_user_info(vpn_username)
             if user_info["success"]:
                 used = user_info.get("data", {}).get("used_traffic", 0)
                 used_gb = used / (1024**3)
                 traffic_text = f"{used_gb:.2f} / {TRIAL_CONFIG['traffic_limit_gb']} GB"
+                
+                if used >= TRIAL_CONFIG["traffic_limit_bytes"]:
+                    traffic_exceeded = True
+            
+            if traffic_exceeded:
+                # Трафик исчерпан — деактивируем trial
+                subscription_manager.deactivate_trial(user.id, "traffic")
+                try:
+                    api_manager.set_user_status(vpn_username, "disabled")
+                except Exception:
+                    pass
+                
+                await update.message.reply_text(
+                    f"🚫 **Пробный период завершён**\n\n"
+                    f"📊 Трафик: {traffic_text} (исчерпан)\n\n"
+                    f"Оформите подписку для продолжения:",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                    ])
+                )
+                return
 
             subscription_result = api_manager.get_subscription_url(vpn_username)
             subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
@@ -1733,7 +1756,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         trial_status = subscription_manager.get_trial_status(user.id)
 
         if trial_status.get("active"):
-            # Активный trial — показываем статус
+            # Активный trial — проверяем трафик в реальном времени
             trial_vpn = trial_status["vpn_username"]
             hours_left = trial_status.get("hours_left", 0)
             expires = trial_status.get("expires")
@@ -1741,12 +1764,40 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Получаем трафик
             traffic_text = "..."
+            traffic_exceeded = False
             user_info = api_manager.get_user_info(trial_vpn)
             if user_info["success"]:
                 used = user_info.get("data", {}).get("used_traffic", 0)
                 used_gb = used / (1024**3)
                 limit_gb = TRIAL_CONFIG["traffic_limit_gb"]
                 traffic_text = f"{used_gb:.2f} / {limit_gb} GB"
+                
+                # Проверяем лимит трафика
+                if used >= TRIAL_CONFIG["traffic_limit_bytes"]:
+                    traffic_exceeded = True
+            
+            if traffic_exceeded:
+                # Трафик исчерпан — деактивируем trial
+                subscription_manager.deactivate_trial(user.id, "traffic")
+                try:
+                    api_manager.set_user_status(trial_vpn, "disabled")
+                except Exception:
+                    pass
+                
+                await update.message.reply_text(
+                    f"👋 Привет, {user.first_name}!\n\n"
+                    f"🚫 **Пробный период завершён**\n\n"
+                    f"📊 Трафик: {traffic_text} (исчерпан)\n\n"
+                    f"Оформите подписку для продолжения:\n\n"
+                    f"📅 **1 месяц — 50⭐**\n"
+                    f"♾️ Безлимитный трафик\n\n"
+                    f"_Сёрфи свободно и безопасно. OrdaFlow._ 🐎",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                    ])
+                )
+                return
 
             subscription_result = api_manager.get_subscription_url(trial_vpn)
             subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{trial_vpn}")
@@ -2251,51 +2302,110 @@ async def my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"📊 Проверяю статус аккаунта...")
     
+    # Сначала проверяем локальный статус подписки и trial
+    sub = subscription_manager.get_subscription(user.id)
+    trial_status = subscription_manager.get_trial_status(user.id)
+    
+    # Определяем, имеет ли пользователь право на доступ
+    has_paid_sub = sub["active"]
+    has_active_trial = trial_status.get("active", False)
+    trial_used = trial_status.get("used", False)
+    
     user_info = api_manager.get_user_info(vpn_username)
     
     if user_info["success"]:
         user_data = user_info.get("data", {})
-        
-        status = user_data.get("status", "unknown")
-        
-        if status == "active":
-            status_emoji = "✅"
-            status_text = "Активный"
-        elif status == "disabled":
-            status_emoji = "🚫"
-            status_text = "Заблокирован"
-        else:
-            status_emoji = "⚠️"
-            status_text = status
-        
-        # Общий трафик
+        api_status = user_data.get("status", "unknown")
         used = user_data.get('used_traffic', 0)
         used_gb = used / 1073741824
-        total_traffic_text = f"{used_gb:.2f} GB (безлимит)"
         
-        # Срок действия
-        expire = user_data.get('expire', 0)
-        if expire > 0:
-            expire_date = datetime.fromtimestamp(expire)
-            days_left = (expire_date - datetime.now()).days
-            expire_text = f"{expire_date.strftime('%d.%m.%Y')} ({days_left} дн.)"
+        if has_paid_sub:
+            # Активная платная подписка
+            expires = sub.get("expires")
+            days_left = (expires - datetime.now()).days if expires else 0
+            expire_text = f"{expires.strftime('%d.%m.%Y')} ({days_left} дн.)" if expires else "♾️ Бессрочно"
+            
+            status_emoji = "✅" if api_status == "active" else "🔴"
+            status_text = "Активный" if api_status == "active" else api_status
+            
+            response_text = (
+                f"📊 **Статус вашего аккаунта**\n\n"
+                f"👤 **Аккаунт:** `{vpn_username}`\n"
+                f"{status_emoji} **Статус:** {status_text}\n\n"
+                f"📦 **Тариф:** {sub.get('plan_name', 'Подписка')}\n"
+                f"♾️ **Трафик:** {used_gb:.2f} GB (безлимит)\n"
+                f"⏳ **Срок действия:** {expire_text}\n"
+            )
+            keyboard = [
+                [InlineKeyboardButton("🔄 Обновить статус", callback_data="my_status")],
+                [InlineKeyboardButton("🔗 Моя ссылка", callback_data="refresh_subscription")],
+                [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+                [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
+            ]
+            
+        elif has_active_trial:
+            # Активный trial — проверяем лимит трафика
+            limit_bytes = TRIAL_CONFIG["traffic_limit_bytes"]
+            limit_gb = TRIAL_CONFIG["traffic_limit_gb"]
+            
+            if used >= limit_bytes:
+                # Трафик исчерпан — деактивируем trial
+                subscription_manager.deactivate_trial(user.id, "traffic")
+                try:
+                    api_manager.set_user_status(vpn_username, "disabled")
+                except Exception:
+                    pass
+                
+                response_text = (
+                    f"📊 **Статус вашего аккаунта**\n\n"
+                    f"👤 **Аккаунт:** `{vpn_username}`\n"
+                    f"🚫 **Статус:** Пробный период завершён\n\n"
+                    f"📊 **Трафик:** {used_gb:.2f} / {limit_gb} GB (исчерпан)\n\n"
+                    f"💡 Оформите подписку для продолжения:"
+                )
+                keyboard = [
+                    [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                    [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
+                ]
+            else:
+                hours_left = trial_status.get("hours_left", 0)
+                expires = trial_status.get("expires")
+                expire_text = expires.strftime('%d.%m.%Y %H:%M') if expires else "Неизвестно"
+                
+                response_text = (
+                    f"📊 **Статус вашего аккаунта**\n\n"
+                    f"👤 **Аккаунт:** `{vpn_username}`\n"
+                    f"🆓 **Статус:** Пробный период\n\n"
+                    f"📊 **Трафик:** {used_gb:.2f} / {limit_gb} GB\n"
+                    f"⏳ **Осталось:** {hours_left} ч. (до {expire_text})\n"
+                )
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Обновить статус", callback_data="my_status")],
+                    [InlineKeyboardButton("🔗 Моя ссылка", callback_data="refresh_subscription")],
+                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+                    [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                    [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
+                ]
         else:
-            expire_text = "♾️ Бессрочно"
-        
-        response_text = (
-            f"📊 **Статус вашего аккаунта**\n\n"
-            f"👤 **Аккаунт:** `{vpn_username}`\n"
-            f"{status_emoji} **Статус:** {status_text}\n\n"
-            f"♾️ **Трафик:** {total_traffic_text}\n"
-            f"⏳ **Срок действия:** {expire_text}\n"
-        )
-        
-        keyboard = [
-            [InlineKeyboardButton("🔄 Обновить статус", callback_data="my_status")],
-            [InlineKeyboardButton("🔗 Моя ссылка", callback_data="refresh_subscription")],
-            [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-            [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
-        ]
+            # Нет ни подписки, ни trial — proxy недоступен
+            if trial_used:
+                reason_text = "Пробный период завершён"
+            elif sub.get("expired"):
+                reason_text = "Подписка истекла"
+            else:
+                reason_text = "Нет активной подписки"
+            
+            response_text = (
+                f"📊 **Статус вашего аккаунта**\n\n"
+                f"👤 **Аккаунт:** `{vpn_username}`\n"
+                f"🚫 **Статус:** Proxy недоступен\n\n"
+                f"📌 **Причина:** {reason_text}\n\n"
+                f"💡 Оформите подписку для активации:"
+            )
+            keyboard = [
+                [InlineKeyboardButton("💳 Оформить подписку (50⭐)", callback_data="buy_month1")],
+                [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
+            ]
     else:
         response_text = (
             f"❌ **Аккаунт не найден**\n\n"
