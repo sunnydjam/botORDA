@@ -1373,26 +1373,33 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             traffic_text = "..."
             traffic_exceeded = False
+            api_disabled = False
             user_info = api_manager.get_user_info(vpn_username)
             if user_info["success"]:
+                api_status = user_info.get("data", {}).get("status", "unknown")
                 used = user_info.get("data", {}).get("used_traffic", 0)
                 used_gb = used / (1024**3)
                 traffic_text = f"{used_gb:.2f} / {TRIAL_CONFIG['traffic_limit_gb']} GB"
                 
                 if used >= TRIAL_CONFIG["traffic_limit_bytes"]:
                     traffic_exceeded = True
+                if api_status == "disabled":
+                    api_disabled = True
             
-            if traffic_exceeded:
-                # Трафик исчерпан — деактивируем trial
-                subscription_manager.deactivate_trial(user.id, "traffic")
-                try:
-                    api_manager.set_user_status(vpn_username, "disabled")
-                except Exception:
-                    pass
+            if traffic_exceeded or api_disabled:
+                # Trial исчерпан
+                reason = "traffic" if traffic_exceeded else "disabled"
+                subscription_manager.deactivate_trial(user.id, reason)
+                if not api_disabled:
+                    try:
+                        api_manager.set_user_status(vpn_username, "disabled")
+                    except Exception:
+                        pass
                 
+                reason_text = f"Трафик: {traffic_text} (исчерпан)" if traffic_exceeded else "Аккаунт отключён"
                 await update.message.reply_text(
                     f"🚫 **Пробный период завершён**\n\n"
-                    f"📊 Трафик: {traffic_text} (исчерпан)\n\n"
+                    f"📌 {reason_text}\n\n"
                     f"Оформите подписку для продолжения:",
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([
@@ -1444,36 +1451,43 @@ async def myvpn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = user_data.get("status", "unknown")
         used_traffic = user_data.get("used_traffic", 0)
         
-        # Форматируем статус
-        status_emoji = "🟢" if status == "active" else "🔴"
-        
-        # Ссылка на подписку
-        subscription_result = api_manager.get_subscription_url(vpn_username)
-        subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
-        
         expires = sub.get("expires")
         days_left = (expires - datetime.now()).days if expires else 0
-        
-        # Общий трафик
         used_gb = used_traffic / (1024**3)
         
-        await update.message.reply_text(
-            f"📊 **Ваш статус**\n\n"
-            f"**Подписка:**\n"
-            f"• Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
-            f"• Осталось: {days_left} дней\n"
-            f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
-            f"**Аккаунт:**\n"
-            f"• Статус: {status_emoji} {status}\n"
-            f"• Трафик: {used_gb:.2f} GB (безлимит)\n"
-            f"• Аккаунт: `{vpn_username}`\n\n"
-            f"🔗 **Ссылка:**\n`{subscription_url}`",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-            ])
-        )
+        if status == "active":
+            subscription_result = api_manager.get_subscription_url(vpn_username)
+            subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
+            
+            await update.message.reply_text(
+                f"📊 **Ваш статус**\n\n"
+                f"**Подписка:**\n"
+                f"• Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
+                f"• Осталось: {days_left} дней\n"
+                f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
+                f"**Аккаунт:**\n"
+                f"• Статус: 🟢 Активный\n"
+                f"• Трафик: {used_gb:.2f} GB (безлимит)\n"
+                f"• Аккаунт: `{vpn_username}`\n\n"
+                f"🔗 **Ссылка:**\n`{subscription_url}`",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+                ])
+            )
+        else:
+            await update.message.reply_text(
+                f"📊 **Ваш статус**\n\n"
+                f"**Подписка:**\n"
+                f"• Тариф: {sub.get('plan_name', 'Неизвестный')}\n"
+                f"• Осталось: {days_left} дней\n\n"
+                f"**Аккаунт:**\n"
+                f"• Статус: 🔴 Отключён\n"
+                f"• Аккаунт: `{vpn_username}`\n\n"
+                f"⚠️ Proxy недоступен. Обратитесь в /paysupport",
+                parse_mode="Markdown"
+            )
     else:
         await update.message.reply_text(
             f"⚠️ **Аккаунт не найден**\n\n"
@@ -1659,44 +1673,58 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data = user_info.get("data", {})
             status = user_data.get("status", "active")
             
-            # Ссылка на подписку
-            subscription_result = api_manager.get_subscription_url(vpn_username)
-            subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
-            
             # Информация о подписке
             expires = sub.get("expires")
             days_left = (expires - datetime.now()).days if expires else 0
             plan_name = sub.get("plan_name", "Неизвестный")
             
-            status_emoji = "🟢" if status == "active" else "🔴"
-            
-            await msg.edit_text(
-                f"✅ **Ваш proxy активен!**\n\n"
-                f"👤 **Аккаунт:** `{vpn_username}`\n"
-                f"📊 **Статус:** {status_emoji} {status}\n"
-                f"♾️ **Трафик:** Безлимит\n\n"
-                f"**Подписка:**\n"
-                f"• Тариф: {plan_name}\n"
-                f"• Осталось: {days_left} дней\n"
-                f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
-                f"🔗 **Ваша ссылка:**\n"
-                f"`{subscription_url}`\n\n"
-                f"📱 _Нажмите кнопку ниже для инструкции по подключению_",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
-                    [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
-                    [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_subscription")],
-                    [InlineKeyboardButton("📊 Подробный статус", callback_data="my_status")],
-                    [InlineKeyboardButton("💳 Продлить подписку", callback_data="back_to_plans")]
-                ])
-            )
-            
-            # Отдельное сообщение для копирования
-            await update.message.reply_text(
-                f"📋 **Ссылка для копирования:**\n\n{subscription_url}",
-                parse_mode="Markdown"
-            )
+            if status == "active":
+                # Ссылка на подписку
+                subscription_result = api_manager.get_subscription_url(vpn_username)
+                subscription_url = subscription_result.get("subscription_url", f"{ORDAFLOW_API_URL}/sub/{vpn_username}")
+                
+                await msg.edit_text(
+                    f"✅ **Ваш proxy активен!**\n\n"
+                    f"👤 **Аккаунт:** `{vpn_username}`\n"
+                    f"🟢 **Статус:** Активный\n"
+                    f"♾️ **Трафик:** Безлимит\n\n"
+                    f"**Подписка:**\n"
+                    f"• Тариф: {plan_name}\n"
+                    f"• Осталось: {days_left} дней\n"
+                    f"• До: {expires.strftime('%d.%m.%Y') if expires else 'Неизвестно'}\n\n"
+                    f"🔗 **Ваша ссылка:**\n"
+                    f"`{subscription_url}`\n\n"
+                    f"📱 _Нажмите кнопку ниже для инструкции по подключению_",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📥 Открыть ссылку", url=subscription_url)],
+                        [InlineKeyboardButton("📱 Как подключиться", callback_data="connection_guide")],
+                        [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_subscription")],
+                        [InlineKeyboardButton("📊 Подробный статус", callback_data="my_status")],
+                        [InlineKeyboardButton("💳 Продлить подписку", callback_data="back_to_plans")]
+                    ])
+                )
+                
+                await update.message.reply_text(
+                    f"📋 **Ссылка для копирования:**\n\n{subscription_url}",
+                    parse_mode="Markdown"
+                )
+            else:
+                # Аккаунт disabled — подписка есть, но proxy не работает
+                await msg.edit_text(
+                    f"⚠️ **Proxy временно недоступен**\n\n"
+                    f"👤 **Аккаунт:** `{vpn_username}`\n"
+                    f"🔴 **Статус:** Отключён\n\n"
+                    f"**Подписка:**\n"
+                    f"• Тариф: {plan_name}\n"
+                    f"• Осталось: {days_left} дней\n\n"
+                    f"Обратитесь в поддержку: /paysupport",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📊 Проверить статус", callback_data="my_status")],
+                        [InlineKeyboardButton("🏠 В меню", callback_data="back_to_menu")]
+                    ])
+                )
         else:
             # Подписка есть, но VPN аккаунт не найден - создаем
             await msg.edit_text(
@@ -1756,38 +1784,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         trial_status = subscription_manager.get_trial_status(user.id)
 
         if trial_status.get("active"):
-            # Активный trial — проверяем трафик в реальном времени
+            # Активный trial — проверяем трафик и API-статус
             trial_vpn = trial_status["vpn_username"]
             hours_left = trial_status.get("hours_left", 0)
             expires = trial_status.get("expires")
             expire_text = expires.strftime('%d.%m.%Y %H:%M') if expires else "Неизвестно"
 
-            # Получаем трафик
+            # Получаем трафик и статус из API
             traffic_text = "..."
             traffic_exceeded = False
+            api_disabled = False
             user_info = api_manager.get_user_info(trial_vpn)
             if user_info["success"]:
+                api_status = user_info.get("data", {}).get("status", "unknown")
                 used = user_info.get("data", {}).get("used_traffic", 0)
                 used_gb = used / (1024**3)
                 limit_gb = TRIAL_CONFIG["traffic_limit_gb"]
                 traffic_text = f"{used_gb:.2f} / {limit_gb} GB"
                 
-                # Проверяем лимит трафика
                 if used >= TRIAL_CONFIG["traffic_limit_bytes"]:
                     traffic_exceeded = True
+                if api_status == "disabled":
+                    api_disabled = True
             
-            if traffic_exceeded:
-                # Трафик исчерпан — деактивируем trial
-                subscription_manager.deactivate_trial(user.id, "traffic")
-                try:
-                    api_manager.set_user_status(trial_vpn, "disabled")
-                except Exception:
-                    pass
+            if traffic_exceeded or api_disabled:
+                # Trial исчерпан — деактивируем
+                reason = "traffic" if traffic_exceeded else "disabled"
+                subscription_manager.deactivate_trial(user.id, reason)
+                if not api_disabled:
+                    try:
+                        api_manager.set_user_status(trial_vpn, "disabled")
+                    except Exception:
+                        pass
                 
+                reason_text = f"Трафик: {traffic_text} (исчерпан)" if traffic_exceeded else "Аккаунт отключён"
                 await update.message.reply_text(
                     f"👋 Привет, {user.first_name}!\n\n"
                     f"🚫 **Пробный период завершён**\n\n"
-                    f"📊 Трафик: {traffic_text} (исчерпан)\n\n"
+                    f"📌 {reason_text}\n\n"
                     f"Оформите подписку для продолжения:\n\n"
                     f"📅 **1 месяц — 50⭐**\n"
                     f"♾️ Безлимитный трафик\n\n"
